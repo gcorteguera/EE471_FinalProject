@@ -1,7 +1,11 @@
 import carla
 
+# Connect to the CARLA server
 client = carla.Client("localhost", 2000)
+
+# Set timeout for communication with CARLA
 client.set_timeout(10.0)
 
+# Print all available maps installed in CARLA
 print("Available maps:")
 print(client.get_available_maps())
