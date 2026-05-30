@@ -1,0 +1,351 @@
+import os
+import glob
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
+
+RESULTS_FOLDER = "results"
+PLOTS_FOLDER = "plots"
+
+ROUTES = ["straightline", "ccurve", "sturn"]
+
+STANLEY_GAINS = [0.4, 0.8, 1.2]
+PURE_PURSUIT_LOOKAHEADS = [3, 6, 10]
+
+REQUIRED_COLUMNS = [
+    "route_name",
+    "controller_type",
+    "tuning_value",
+    "time",
+    "x",
+    "y",
+    "cross_track_error",
+    "heading_error_deg",
+    "distance_to_goal"
+]
+
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def make_plots_folder():
+    os.makedirs(PLOTS_FOLDER, exist_ok=True)
+
+
+def is_valid_dataframe(df):
+    for col in REQUIRED_COLUMNS:
+        if col not in df.columns:
+            return False
+
+    return not df.empty
+
+
+def load_csv(filename):
+    path = os.path.join(RESULTS_FOLDER, filename)
+
+    if not os.path.exists(path):
+        print(f"Missing file: {path}")
+        return None
+
+    df = pd.read_csv(path)
+
+    if not is_valid_dataframe(df):
+        print(f"Skipping incompatible file: {filename}")
+        return None
+
+    return df
+
+
+def save_plot(filename):
+    path = os.path.join(PLOTS_FOLDER, filename)
+    plt.tight_layout()
+    plt.savefig(path, dpi=300)
+    plt.close()
+    print(f"Saved plot: {path}")
+
+
+def tuning_label(controller, value):
+    if controller == "stanley":
+        return f"k={value}"
+
+    return f"Ld={value}m"
+
+
+# ============================================================
+# PLOT 1: REPRESENTATIVE TRAJECTORIES
+# ============================================================
+
+def plot_representative_trajectories():
+    """
+    Compare Stanley k=0.8 and Pure Pursuit Ld=6m for each route.
+    """
+
+    for route in ROUTES:
+        stanley_file = f"stanley_{route}_k08.csv"
+        pp_file = f"purepursuit_{route}_ld6.csv"
+
+        stanley = load_csv(stanley_file)
+        pp = load_csv(pp_file)
+
+        if stanley is None or pp is None:
+            continue
+
+        plt.figure()
+
+        plt.plot(stanley["x"], stanley["y"], label="Stanley k=0.8")
+        plt.plot(pp["x"], pp["y"], label="Pure Pursuit Ld=6m")
+
+        plt.xlabel("X Position [m]")
+        plt.ylabel("Y Position [m]")
+        plt.title(f"Trajectory Comparison - {route}")
+        plt.axis("equal")
+        plt.grid(True)
+        plt.legend()
+
+        save_plot(f"trajectory_{route}.png")
+
+
+# ============================================================
+# PLOT 2: CROSS-TRACK ERROR
+# ============================================================
+
+def plot_cross_track_error():
+    """
+    Compare cross-track error over time for representative tuning.
+    """
+
+    for route in ROUTES:
+        stanley_file = f"stanley_{route}_k08.csv"
+        pp_file = f"purepursuit_{route}_ld6.csv"
+
+        stanley = load_csv(stanley_file)
+        pp = load_csv(pp_file)
+
+        if stanley is None or pp is None:
+            continue
+
+        plt.figure()
+
+        plt.plot(
+            stanley["time"],
+            stanley["cross_track_error"].abs(),
+            label="Stanley k=0.8"
+        )
+
+        plt.plot(
+            pp["time"],
+            pp["cross_track_error"].abs(),
+            label="Pure Pursuit Ld=6m"
+        )
+
+        plt.xlabel("Time [s]")
+        plt.ylabel("Absolute Cross-Track Error [m]")
+        plt.title(f"Cross-Track Error - {route}")
+        plt.grid(True)
+        plt.legend()
+
+        save_plot(f"cross_track_error_{route}.png")
+
+
+# ============================================================
+# PLOT 3: HEADING ERROR
+# ============================================================
+
+def plot_heading_error():
+    """
+    Compare heading error over time for representative tuning.
+    """
+
+    for route in ROUTES:
+        stanley_file = f"stanley_{route}_k08.csv"
+        pp_file = f"purepursuit_{route}_ld6.csv"
+
+        stanley = load_csv(stanley_file)
+        pp = load_csv(pp_file)
+
+        if stanley is None or pp is None:
+            continue
+
+        plt.figure()
+
+        plt.plot(
+            stanley["time"],
+            stanley["heading_error_deg"].abs(),
+            label="Stanley k=0.8"
+        )
+
+        plt.plot(
+            pp["time"],
+            pp["heading_error_deg"].abs(),
+            label="Pure Pursuit Ld=6m"
+        )
+
+        plt.xlabel("Time [s]")
+        plt.ylabel("Absolute Heading Error [deg]")
+        plt.title(f"Heading Error - {route}")
+        plt.grid(True)
+        plt.legend()
+
+        save_plot(f"heading_error_{route}.png")
+
+
+# ============================================================
+# PLOT 4: STANLEY GAIN SWEEP
+# ============================================================
+
+def plot_stanley_gain_sweep():
+    """
+    Plot mean and max cross-track error for Stanley gain values.
+    """
+
+    for route in ROUTES:
+        gains = []
+        mean_errors = []
+        max_errors = []
+
+        for k in STANLEY_GAINS:
+            label = str(k).replace(".", "")
+            filename = f"stanley_{route}_k{label}.csv"
+
+            df = load_csv(filename)
+
+            if df is None:
+                continue
+
+            gains.append(k)
+            mean_errors.append(df["cross_track_error"].abs().mean())
+            max_errors.append(df["cross_track_error"].abs().max())
+
+        if not gains:
+            continue
+
+        plt.figure()
+
+        plt.plot(gains, mean_errors, marker="o", label="Mean |CTE|")
+        plt.plot(gains, max_errors, marker="o", label="Max |CTE|")
+
+        plt.xlabel("Stanley Gain k")
+        plt.ylabel("Cross-Track Error [m]")
+        plt.title(f"Stanley Gain Sweep - {route}")
+        plt.grid(True)
+        plt.legend()
+
+        save_plot(f"stanley_gain_sweep_{route}.png")
+
+
+# ============================================================
+# PLOT 5: PURE PURSUIT LOOKAHEAD SWEEP
+# ============================================================
+
+def plot_pure_pursuit_lookahead_sweep():
+    """
+    Plot mean and max cross-track error for Pure Pursuit lookahead.
+    """
+
+    for route in ROUTES:
+        lookaheads = []
+        mean_errors = []
+        max_errors = []
+
+        for ld in PURE_PURSUIT_LOOKAHEADS:
+            filename = f"purepursuit_{route}_ld{ld}.csv"
+
+            df = load_csv(filename)
+
+            if df is None:
+                continue
+
+            lookaheads.append(ld)
+            mean_errors.append(df["cross_track_error"].abs().mean())
+            max_errors.append(df["cross_track_error"].abs().max())
+
+        if not lookaheads:
+            continue
+
+        plt.figure()
+
+        plt.plot(lookaheads, mean_errors, marker="o", label="Mean |CTE|")
+        plt.plot(lookaheads, max_errors, marker="o", label="Max |CTE|")
+
+        plt.xlabel("Lookahead Distance [m]")
+        plt.ylabel("Cross-Track Error [m]")
+        plt.title(f"Pure Pursuit Lookahead Sweep - {route}")
+        plt.grid(True)
+        plt.legend()
+
+        save_plot(f"purepursuit_lookahead_sweep_{route}.png")
+
+
+# ============================================================
+# SUMMARY TABLE
+# ============================================================
+
+def create_summary_table():
+    """
+    Create summary_metrics.csv using only valid new-format CSV files.
+    """
+
+    rows = []
+
+    csv_files = glob.glob(os.path.join(RESULTS_FOLDER, "*.csv"))
+
+    for file_path in csv_files:
+        filename = os.path.basename(file_path)
+
+        df = pd.read_csv(file_path)
+
+        if not is_valid_dataframe(df):
+            print(f"Skipping old/incompatible file: {filename}")
+            continue
+
+        rows.append({
+            "file": filename,
+            "route": df["route_name"].iloc[0],
+            "controller": df["controller_type"].iloc[0],
+            "tuning_value": df["tuning_value"].iloc[0],
+            "mean_abs_cte_m": df["cross_track_error"].abs().mean(),
+            "max_abs_cte_m": df["cross_track_error"].abs().max(),
+            "mean_abs_heading_error_deg": df["heading_error_deg"].abs().mean(),
+            "max_abs_heading_error_deg": df["heading_error_deg"].abs().max(),
+            "final_distance_to_goal_m": df["distance_to_goal"].iloc[-1],
+            "simulation_time_s": df["time"].iloc[-1]
+        })
+
+    summary = pd.DataFrame(rows)
+
+    if not summary.empty:
+        summary = summary.sort_values(
+            by=["route", "controller", "tuning_value"]
+        )
+
+    summary_path = os.path.join(PLOTS_FOLDER, "summary_metrics.csv")
+    summary.to_csv(summary_path, index=False)
+
+    print(f"Saved summary table: {summary_path}")
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+    make_plots_folder()
+
+    plot_representative_trajectories()
+    plot_cross_track_error()
+    plot_heading_error()
+    plot_stanley_gain_sweep()
+    plot_pure_pursuit_lookahead_sweep()
+    create_summary_table()
+
+    print("\nAll plots complete.")
+    print(f"Plots saved in folder: {PLOTS_FOLDER}")
+
+
+if __name__ == "__main__":
+    main()

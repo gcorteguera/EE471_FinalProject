@@ -1,0 +1,213 @@
+import carla
+import math
+import csv
+
+
+def normalize_angle(angle):
+    while angle > math.pi:
+        angle -= 2.0 * math.pi
+    while angle < -math.pi:
+        angle += 2.0 * math.pi
+    return angle
+
+
+def get_speed(vehicle):
+    v = vehicle.get_velocity()
+    return math.sqrt(v.x**2 + v.y**2 + v.z**2)
+
+
+def distance_2d(loc1, loc2):
+    return math.sqrt((loc1.x - loc2.x)**2 + (loc1.y - loc2.y)**2)
+
+
+def pure_pursuit_control(vehicle, route, lookahead_distance=6.0, wheelbase=2.8):
+    transform = vehicle.get_transform()
+    loc = transform.location
+    yaw = math.radians(transform.rotation.yaw)
+
+    closest_idx = 0
+    min_dist = float("inf")
+
+    for i, wp in enumerate(route):
+        dist = distance_2d(loc, wp.transform.location)
+        if dist < min_dist:
+            min_dist = dist
+            closest_idx = i
+
+    target_idx = closest_idx
+
+    for i in range(closest_idx, len(route)):
+        if distance_2d(loc, route[i].transform.location) >= lookahead_distance:
+            target_idx = i
+            break
+
+    target_wp = route[target_idx]
+    target_loc = target_wp.transform.location
+
+    dx = target_loc.x - loc.x
+    dy = target_loc.y - loc.y
+
+    target_angle = math.atan2(dy, dx)
+    alpha = normalize_angle(target_angle - yaw)
+
+    steer_rad = math.atan2(
+        2.0 * wheelbase * math.sin(alpha),
+        lookahead_distance
+    )
+
+    steer = steer_rad / math.radians(35)
+    steer = max(-1.0, min(1.0, steer))
+
+    cross_track_error = min_dist
+    heading_error = normalize_angle(
+        math.radians(route[closest_idx].transform.rotation.yaw) - yaw
+    )
+
+    return steer, cross_track_error, heading_error, closest_idx, target_idx
+
+
+client = carla.Client("localhost", 2000)
+client.set_timeout(10.0)
+
+world = client.get_world()
+original_settings = world.get_settings()
+
+settings = world.get_settings()
+settings.synchronous_mode = True
+settings.fixed_delta_seconds = 0.05
+world.apply_settings(settings)
+
+carla_map = world.get_map()
+spawn = carla_map.get_spawn_points()[0]
+
+vehicle_bp = world.get_blueprint_library().find("vehicle.tesla.model3")
+vehicle = world.spawn_actor(vehicle_bp, spawn)
+
+spectator = world.get_spectator()
+
+waypoint = carla_map.get_waypoint(spawn.location)
+route = []
+
+for i in range(350):
+    route.append(waypoint)
+
+    next_waypoints = waypoint.next(2.0)
+
+    if not next_waypoints:
+        break
+
+    waypoint = next_waypoints[0]
+
+goal_location = route[-1].transform.location
+
+for wp in route:
+    world.debug.draw_point(
+        wp.transform.location + carla.Location(z=0.5),
+        size=0.15,
+        color=carla.Color(255, 0, 0),
+        life_time=600.0
+    )
+
+world.debug.draw_point(
+    goal_location + carla.Location(z=1.0),
+    size=0.5,
+    color=carla.Color(255, 255, 0),
+    life_time=600.0
+)
+
+print("Starting Pure Pursuit controller...")
+print(f"Generated {len(route)} waypoints.")
+print("Yellow dot is the goal point.")
+
+log = []
+
+try:
+    for step in range(3000):
+        world.tick()
+
+        steer, cte, heading_error, closest_idx, target_idx = pure_pursuit_control(
+            vehicle,
+            route,
+            lookahead_distance=6.0,
+            wheelbase=2.8
+        )
+
+        vehicle.apply_control(
+            carla.VehicleControl(
+                throttle=0.25,
+                steer=steer,
+                brake=0.0
+            )
+        )
+
+        transform = vehicle.get_transform()
+        distance_to_goal = distance_2d(transform.location, goal_location)
+
+        spectator.set_transform(
+            carla.Transform(
+                transform.location + carla.Location(z=65),
+                carla.Rotation(
+                    pitch=-90,
+                    yaw=0,
+                    roll=0
+                )
+            )
+        )
+
+        target_loc = route[target_idx].transform.location
+
+        world.debug.draw_point(
+            target_loc + carla.Location(z=1.0),
+            size=0.25,
+            color=carla.Color(0, 255, 0),
+            life_time=0.1
+        )
+
+        log.append([
+            step,
+            transform.location.x,
+            transform.location.y,
+            steer,
+            cte,
+            math.degrees(heading_error),
+            closest_idx,
+            target_idx,
+            get_speed(vehicle),
+            distance_to_goal
+        ])
+
+        if distance_to_goal < 3.0:
+            print("Goal reached!")
+            break
+
+finally:
+    vehicle.apply_control(
+        carla.VehicleControl(
+            throttle=0.0,
+            brake=1.0
+        )
+    )
+
+    vehicle.destroy()
+    world.apply_settings(original_settings)
+
+    with open("pure_pursuit_results.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+
+        writer.writerow([
+            "step",
+            "x",
+            "y",
+            "steer",
+            "cross_track_error",
+            "heading_error_deg",
+            "closest_waypoint",
+            "target_waypoint",
+            "speed",
+            "distance_to_goal"
+        ])
+
+        writer.writerows(log)
+
+    print("Done.")
+    print("Results saved to pure_pursuit_results.csv")
