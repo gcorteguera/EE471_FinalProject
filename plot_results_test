@@ -2,24 +2,33 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
+# ==============================================================
+# Plotting and Analysis of Controller Performance
+# ==============================================================
 
+# CSV files to compare
 FILES = {
     "Stanley k=0.8": "stanley_results.csv",
     "Pure Pursuit Ld=6m": "pure_pursuit_results.csv",
 }
 
 
+# Load CSV and convert simulation steps to time
 def load_data(filename):
+
     if not os.path.exists(filename):
         print(f"Missing file: {filename}")
         return None
 
     df = pd.read_csv(filename)
     df["time"] = df["step"] * 0.05
+
     return df
 
 
+# Plot cross-track error over time
 def plot_cross_track_error(data):
+
     plt.figure()
 
     for label, df in data.items():
@@ -28,14 +37,19 @@ def plot_cross_track_error(data):
     plt.xlabel("Time [s]")
     plt.ylabel("Absolute Cross-Track Error [m]")
     plt.title("Cross-Track Error Comparison")
+
     plt.legend()
     plt.grid(True)
+
     plt.tight_layout()
     plt.savefig("cross_track_error_comparison.png", dpi=300)
+
     plt.show()
 
 
+# Plot heading error over time
 def plot_heading_error(data):
+
     plt.figure()
 
     for label, df in data.items():
@@ -44,14 +58,19 @@ def plot_heading_error(data):
     plt.xlabel("Time [s]")
     plt.ylabel("Absolute Heading Error [deg]")
     plt.title("Heading Error Comparison")
+
     plt.legend()
     plt.grid(True)
+
     plt.tight_layout()
     plt.savefig("heading_error_comparison.png", dpi=300)
+
     plt.show()
 
 
+# Plot vehicle trajectories
 def plot_trajectory(data):
+
     plt.figure()
 
     for label, df in data.items():
@@ -60,18 +79,25 @@ def plot_trajectory(data):
     plt.xlabel("X Position [m]")
     plt.ylabel("Y Position [m]")
     plt.title("Vehicle Trajectory Comparison")
+
     plt.axis("equal")
+
     plt.legend()
     plt.grid(True)
+
     plt.tight_layout()
     plt.savefig("trajectory_comparison.png", dpi=300)
+
     plt.show()
 
 
+# Create summary table of performance metrics
 def make_summary_table(data):
+
     rows = []
 
     for label, df in data.items():
+
         rows.append({
             "Controller": label,
             "Mean |CTE| [m]": abs(df["cross_track_error"]).mean(),
@@ -83,20 +109,25 @@ def make_summary_table(data):
         })
 
     summary = pd.DataFrame(rows)
-    summary.to_csv("summary_metrics.csv", index=False)
+
+    summary.to_csv(
+        "summary_metrics.csv",
+        index=False
+    )
 
     print("\nSummary Metrics:")
     print(summary.to_string(index=False))
 
 
+# Main program
 def main():
+
     data = {}
 
     for label, filename in FILES.items():
         df = load_data(filename)
         if df is not None:
             data[label] = df
-
     if not data:
         print("No data loaded.")
         return

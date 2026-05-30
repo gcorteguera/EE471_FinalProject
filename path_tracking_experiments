@@ -4,6 +4,7 @@ import csv
 import os
 import time
 
+
 # ============================================================
 # PROJECT:
 #   Pure Pursuit vs. Stanley Path Tracking in CARLA
@@ -20,7 +21,6 @@ import time
 #       1. straightline  -> least heading change
 #       2. ccurve        -> mostly one-direction turning
 #       3. sturn         -> left and right turning
-#
 # ============================================================
 
 
@@ -42,6 +42,22 @@ CAMERA_HEIGHT = 80
 # ============================================================
 # ROUTES
 # ============================================================
+#
+# These route labels are used in the output CSV filenames
+# and in the final plots.
+#
+# The spawn point is selected automatically based on the
+# road geometry analysis functions below.
+#
+# straightline:
+#   road segment with minimal heading change
+#
+# ccurve:
+#   road segment that mainly turns in one direction
+#
+# sturn:
+#   road segment containing both left and right turns
+# ============================================================
 
 ROUTES = [
     {
@@ -58,15 +74,16 @@ ROUTES = [
     }
 ]
 
-
 # ============================================================
 # TUNING PARAMETER SWEEPS
 # ============================================================
+#
+# Stanley is tested with different gain values.
+# Pure Pursuit is tested with different lookahead distances.
+# ============================================================
 
 STANLEY_GAINS = [0.4, 0.8, 1.2]
-
 PURE_PURSUIT_LOOKAHEADS = [3.0, 6.0, 10.0]
-
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -76,43 +93,33 @@ def normalize_angle(angle):
     """Normalize angle to [-pi, pi]."""
     while angle > math.pi:
         angle -= 2.0 * math.pi
-
     while angle < -math.pi:
         angle += 2.0 * math.pi
-
     return angle
-
 
 def angle_diff_deg(a, b):
     """
     Compute shortest signed difference between two angles in degrees.
     """
     diff = a - b
-
     while diff > 180:
         diff -= 360
-
     while diff < -180:
         diff += 360
-
     return diff
-
 
 def get_speed(vehicle):
     """Compute vehicle speed in m/s."""
     v = vehicle.get_velocity()
     return math.sqrt(v.x**2 + v.y**2 + v.z**2)
 
-
 def distance_2d(loc1, loc2):
     """Compute distance between two CARLA locations using x-y only."""
     return math.sqrt((loc1.x - loc2.x)**2 + (loc1.y - loc2.y)**2)
 
-
 def clamp(value, low, high):
     """Limit a value between low and high."""
     return max(low, min(high, value))
-
 
 def format_gain(value):
     """
@@ -125,7 +132,6 @@ def format_gain(value):
     """
     return str(value).replace(".", "")
 
-
 # ============================================================
 # ROAD PATH GENERATION
 # ============================================================
@@ -136,22 +142,18 @@ def generate_road_path(carla_map, spawn_transform):
 
     This keeps the red path on the drivable road network.
     """
-
     waypoint = carla_map.get_waypoint(spawn_transform.location)
     path = []
 
     for _ in range(NUM_PATH_POINTS):
         path.append(waypoint.transform)
-
         next_waypoints = waypoint.next(POINT_SPACING)
 
         if not next_waypoints:
             break
-
         waypoint = next_waypoints[0]
 
     return path
-
 
 # ============================================================
 # ROUTE SHAPE ANALYSIS
@@ -160,26 +162,12 @@ def generate_road_path(carla_map, spawn_transform):
 def analyze_path_shape(path):
     """
     Analyze the shape of a road path using heading changes.
-
-    Returns:
-        total_abs_change:
-            total amount of turning
-
-        net_change:
-            final turning direction
-
-        positive_turn_count:
-            number of left-turning increments
-
-        negative_turn_count:
-            number of right-turning increments
-
-        direction_changes:
-            number of times the path changes turning direction
+    The heading changes are used to classify routes as:
+        straightline
+        ccurve
+        sturn
     """
-
     headings = [tf.rotation.yaw for tf in path]
-
     heading_changes = []
 
     for i in range(1, len(headings)):
@@ -207,31 +195,26 @@ def analyze_path_shape(path):
         previous_sign = current_sign
 
     return {
-        "total_abs_change": total_abs_change,
-        "net_change": net_change,
-        "positive_turn_count": positive_turn_count,
-        "negative_turn_count": negative_turn_count,
+        "total_abs_change": total_abs_change, "net_change": net_change,
+        "positive_turn_count": positive_turn_count, "negative_turn_count": negative_turn_count,
         "direction_changes": direction_changes
     }
-
 
 def find_best_straight_route(carla_map):
     """
     Find the spawn point with the straightest road path.
-
-    Straight path criterion:
-        smallest total absolute heading change
+    The route with the smallest total heading change is selected.
     """
-
     spawn_points = carla_map.get_spawn_points()
 
     best_spawn_index = 0
     best_score = float("inf")
 
+    # Evaluate every spawn point and choose the route
+    # with the lowest amount of turning.
     for spawn_index, spawn in enumerate(spawn_points):
         path = generate_road_path(carla_map, spawn)
         shape = analyze_path_shape(path)
-
         score = shape["total_abs_change"]
 
         if score < best_score:
@@ -242,17 +225,11 @@ def find_best_straight_route(carla_map):
 
     return best_spawn_index
 
-
 def find_best_ccurve_route(carla_map):
     """
     Find a good C-curve road path.
-
-    C-curve criterion:
-        - large total turning
-        - mostly one direction
-        - few direction changes
+    The chosen route should mostly turn in one direction.
     """
-
     spawn_points = carla_map.get_spawn_points()
 
     best_spawn_index = 0
@@ -267,7 +244,7 @@ def find_best_ccurve_route(carla_map):
         direction_changes = shape["direction_changes"]
 
         # Reward strong one-direction turning.
-        # Penalize many direction changes.
+        # Penalize routes that switch turning direction too often.
         score = net + 0.4 * total_abs - 20.0 * direction_changes
 
         if total_abs > 30 and direction_changes <= 2 and score > best_score:
@@ -278,22 +255,19 @@ def find_best_ccurve_route(carla_map):
 
     return best_spawn_index
 
-
 def find_best_sturn_route(carla_map):
     """
     Find a good S-turn road path.
-
-    S-turn criterion:
-        - path has both left and right turns
-        - path changes turning direction
-        - enough total heading change to be interesting
+    The chosen route should contain both left and right turns.
     """
-
     spawn_points = carla_map.get_spawn_points()
 
     best_spawn_index = 0
     best_score = -float("inf")
 
+    # Search for routes containing both left and right turns.
+    # These are more challenging because the controller must
+    # repeatedly change steering direction.
     for spawn_index, spawn in enumerate(spawn_points):
         path = generate_road_path(carla_map, spawn)
         shape = analyze_path_shape(path)
@@ -304,7 +278,6 @@ def find_best_sturn_route(carla_map):
         direction_changes = shape["direction_changes"]
 
         if pos > 5 and neg > 5 and direction_changes >= 1:
-            # Reward both turning directions and total curvature.
             score = total_abs + 30.0 * direction_changes + min(pos, neg)
 
             if score > best_score:
@@ -315,12 +288,10 @@ def find_best_sturn_route(carla_map):
 
     return best_spawn_index
 
-
 def resolve_spawn_index(carla_map, spawn_setting):
     """
-    Convert route spawn setting into an actual spawn index.
+    Convert automatic route labels into actual CARLA spawn indices.
     """
-
     if spawn_setting == "auto_straight":
         return find_best_straight_route(carla_map)
 
@@ -332,7 +303,6 @@ def resolve_spawn_index(carla_map, spawn_setting):
 
     return spawn_setting
 
-
 # ============================================================
 # CONTROLLERS
 # ============================================================
@@ -340,19 +310,17 @@ def resolve_spawn_index(carla_map, spawn_setting):
 def stanley_control(vehicle, path, k):
     """
     Stanley controller.
-
     Uses:
         heading error
         cross-track error
     """
-
     transform = vehicle.get_transform()
     loc = transform.location
     yaw = math.radians(transform.rotation.yaw)
-
     closest_idx = 0
     min_dist = float("inf")
 
+    # Find the closest waypoint on the reference path.
     for i, path_tf in enumerate(path):
         dist = distance_2d(loc, path_tf.location)
 
@@ -362,21 +330,19 @@ def stanley_control(vehicle, path, k):
 
     closest_tf = path[closest_idx]
     path_yaw = math.radians(closest_tf.rotation.yaw)
-
     heading_error = normalize_angle(path_yaw - yaw)
-
     dx = loc.x - closest_tf.location.x
     dy = loc.y - closest_tf.location.y
-
     perp_heading = path_yaw + math.pi / 2.0
 
-    cross_track_error = (
-        dx * math.cos(perp_heading)
-        + dy * math.sin(perp_heading)
-    )
+    cross_track_error = (dx * math.cos(perp_heading) + dy * math.sin(perp_heading))
 
     speed = max(get_speed(vehicle), 0.1)
 
+    # Stanley steering law.
+    # The first term corrects heading error.
+    # The second term corrects lateral path error.
+    # Larger k values create more aggressive corrections.
     steer_rad = heading_error - math.atan2(k * cross_track_error, speed)
 
     steer = steer_rad / math.radians(35.0)
@@ -384,21 +350,18 @@ def stanley_control(vehicle, path, k):
 
     return steer, cross_track_error, heading_error, closest_idx
 
-
 def pure_pursuit_control(vehicle, path, lookahead_distance, wheelbase=2.8):
     """
     Pure Pursuit controller.
-
     Uses a target point ahead of the vehicle.
     """
-
     transform = vehicle.get_transform()
     loc = transform.location
     yaw = math.radians(transform.rotation.yaw)
-
     closest_idx = 0
     min_dist = float("inf")
 
+    # Find the closest waypoint on the path.
     for i, path_tf in enumerate(path):
         dist = distance_2d(loc, path_tf.location)
 
@@ -408,6 +371,8 @@ def pure_pursuit_control(vehicle, path, lookahead_distance, wheelbase=2.8):
 
     target_idx = closest_idx
 
+    # Search forward until a waypoint at least lookahead_distance
+    # away from the vehicle is found.
     for i in range(closest_idx, len(path)):
         if distance_2d(loc, path[i].location) >= lookahead_distance:
             target_idx = i
@@ -415,13 +380,12 @@ def pure_pursuit_control(vehicle, path, lookahead_distance, wheelbase=2.8):
 
     target_tf = path[target_idx]
     target_loc = target_tf.location
-
     dx = target_loc.x - loc.x
     dy = target_loc.y - loc.y
-
     target_angle = math.atan2(dy, dx)
     alpha = normalize_angle(target_angle - yaw)
 
+    # Pure Pursuit steering command toward the lookahead target.
     steer_rad = math.atan2(
         2.0 * wheelbase * math.sin(alpha),
         lookahead_distance
@@ -430,14 +394,11 @@ def pure_pursuit_control(vehicle, path, lookahead_distance, wheelbase=2.8):
     steer = steer_rad / math.radians(35.0)
     steer = clamp(steer, -1.0, 1.0)
 
-    heading_error = normalize_angle(
-        math.radians(path[closest_idx].rotation.yaw) - yaw
-    )
+    heading_error = normalize_angle(math.radians(path[closest_idx].rotation.yaw) - yaw)
 
     cross_track_error = min_dist
 
     return steer, cross_track_error, heading_error, closest_idx, target_idx
-
 
 # ============================================================
 # SPEED CONTROL
@@ -446,8 +407,8 @@ def pure_pursuit_control(vehicle, path, lookahead_distance, wheelbase=2.8):
 def speed_control(vehicle, target_speed):
     """
     Basic speed controller.
+    Keeps vehicle speed approximately consistent across experiments.
     """
-
     speed = get_speed(vehicle)
 
     if speed < target_speed:
@@ -473,7 +434,6 @@ def make_output_filename(controller_type, route_name, tuning_value):
     """
     Create clear CSV file names.
     """
-
     if controller_type == "stanley":
         return f"stanley_{route_name}_k{format_gain(tuning_value)}.csv"
 
@@ -482,22 +442,19 @@ def make_output_filename(controller_type, route_name, tuning_value):
 
     raise ValueError("Invalid controller type.")
 
-
 # ============================================================
 # SINGLE EXPERIMENT
 # ============================================================
 
 def run_single_experiment(
-    world,
-    carla_map,
-    blueprint_library,
-    route_name,
-    spawn_index,
-    controller_type,
+    world, carla_map, blueprint_library,
+    route_name, spawn_index, controller_type,
     tuning_value
 ):
+    """
+    Run one controller, one route, and one tuning value.
+    """
     vehicle = None
-
     spawn_points = carla_map.get_spawn_points()
 
     if spawn_index >= len(spawn_points):
@@ -508,12 +465,7 @@ def run_single_experiment(
 
     spawn = spawn_points[spawn_index]
 
-    output_filename = make_output_filename(
-        controller_type,
-        route_name,
-        tuning_value
-    )
-
+    output_filename = make_output_filename(controller_type, route_name, tuning_value)
     output_path = os.path.join(RESULTS_FOLDER, output_filename)
 
     print("\n============================================================")
@@ -528,27 +480,21 @@ def run_single_experiment(
     try:
         vehicle_bp = blueprint_library.find("vehicle.tesla.model3")
         vehicle = world.spawn_actor(vehicle_bp, spawn)
-
         world.tick()
-
         spectator = world.get_spectator()
-
         path = generate_road_path(carla_map, spawn)
         goal_location = path[-1].location
 
+        # Draw reference path and goal point in CARLA.
         for path_tf in path:
             world.debug.draw_point(
                 path_tf.location + carla.Location(z=0.5),
-                size=0.12,
-                color=carla.Color(255, 0, 0),
-                life_time=120.0
+                size=0.12, color=carla.Color(255, 0, 0), life_time=120.0
             )
 
         world.debug.draw_point(
             goal_location + carla.Location(z=1.0),
-            size=0.6,
-            color=carla.Color(255, 255, 0),
-            life_time=120.0
+            size=0.6, color=carla.Color(255, 255, 0), life_time=120.0
         )
 
         log = []
@@ -572,6 +518,7 @@ def run_single_experiment(
                     tuning_value
                 )
 
+                # Draw Pure Pursuit lookahead target in green.
                 if target_idx >= 0:
                     world.debug.draw_point(
                         path[target_idx].location + carla.Location(z=1.0),
@@ -586,54 +533,38 @@ def run_single_experiment(
             throttle, brake = speed_control(vehicle, TARGET_SPEED)
 
             vehicle.apply_control(
-                carla.VehicleControl(
-                    throttle=throttle,
-                    steer=steer,
-                    brake=brake
-                )
+                carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
             )
 
             transform = vehicle.get_transform()
             speed = get_speed(vehicle)
-            distance_to_goal = distance_2d(
-                transform.location,
-                goal_location
-            )
 
+            distance_to_goal = distance_2d(transform.location, goal_location)
+
+            # Top-down spectator camera for consistent visualization.
             spectator.set_transform(
                 carla.Transform(
                     transform.location + carla.Location(z=CAMERA_HEIGHT),
-                    carla.Rotation(
-                        pitch=-90,
-                        yaw=0,
-                        roll=0
-                    )
+                    carla.Rotation(pitch=-90, yaw=0, roll=0)
                 )
             )
 
             closest_path_point = path[closest_idx].location
 
+            # Store vehicle state and performance metrics.
+            #
+            # These values are later used to generate:
+            #   - trajectory plots
+            #   - cross-track error plots
+            #   - heading error plots
+            #   - tuning parameter sweep plots
             log.append([
-                step,
-                step * FIXED_DELTA_SECONDS,
-                route_name,
-                spawn_index,
-                controller_type,
-                tuning_value,
-                transform.location.x,
-                transform.location.y,
-                closest_path_point.x,
-                closest_path_point.y,
-                transform.rotation.yaw,
-                steer,
-                throttle,
-                brake,
-                cte,
-                math.degrees(heading_error),
-                closest_idx,
-                target_idx,
-                speed,
-                distance_to_goal
+                step, step * FIXED_DELTA_SECONDS, route_name,
+                spawn_index, controller_type, tuning_value,
+                transform.location.x, transform.location.y, closest_path_point.x,
+                closest_path_point.y, transform.rotation.yaw, steer,
+                throttle, brake, cte, math.degrees(heading_error),
+                closest_idx, target_idx, speed, distance_to_goal
             ])
 
             if closest_idx > len(path) - 10 and distance_to_goal < GOAL_DISTANCE_THRESHOLD:
@@ -677,6 +608,13 @@ def run_single_experiment(
 # ============================================================
 
 def run_all_experiments():
+    """
+    Run the full parameter sweep.
+    Total experiments:
+        3 routes x 3 Stanley gains = 9
+        3 routes x 3 Pure Pursuit lookaheads = 9
+        Total = 18
+    """
     os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
     client = carla.Client("localhost", 2000)
@@ -717,13 +655,14 @@ def run_all_experiments():
                 f"  {route['name']} -> spawn index {route['spawn_index']}"
             )
 
+        # Run all combinations of route, controller, and tuning value.
         for route in resolved_routes:
             route_name = route["name"]
             spawn_index = route["spawn_index"]
 
             for k in STANLEY_GAINS:
                 run_single_experiment(
-                    world=world,
+                    world=world, 
                     carla_map=carla_map,
                     blueprint_library=blueprint_library,
                     route_name=route_name,
@@ -747,6 +686,7 @@ def run_all_experiments():
         print(f"CSV files saved in folder: {RESULTS_FOLDER}")
 
     finally:
+        # Restore CARLA settings when all experiments are done.
         world.apply_settings(original_settings)
 
 

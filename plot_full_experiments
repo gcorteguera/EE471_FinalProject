@@ -17,49 +17,35 @@ STANLEY_GAINS = [0.4, 0.8, 1.2]
 PURE_PURSUIT_LOOKAHEADS = [3, 6, 10]
 
 REQUIRED_COLUMNS = [
-    "route_name",
-    "controller_type",
-    "tuning_value",
-    "time",
-    "x",
-    "y",
-    "path_x",
-    "path_y",
-    "cross_track_error",
-    "heading_error_deg",
-    "distance_to_goal"
+    "route_name", "controller_type", "tuning_value",
+    "time", "x", "y", "path_x", "path_y",
+    "cross_track_error", "heading_error_deg", "distance_to_goal"
 ]
-
 
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
 
 def make_plots_folder():
-    """Create plots folder if it does not already exist."""
+    """Create plots folder"""
     os.makedirs(PLOTS_FOLDER, exist_ok=True)
-
 
 def is_valid_dataframe(df):
     """
     Check whether a CSV file contains the columns required
     for the newest plotting script.
     """
-
     for col in REQUIRED_COLUMNS:
         if col not in df.columns:
             return False
 
     return not df.empty
 
-
 def load_csv(filename):
     """
     Load one CSV file from the results folder.
-
     If the file is missing or from an older script version, skip it.
     """
-
     path = os.path.join(RESULTS_FOLDER, filename)
 
     if not os.path.exists(path):
@@ -74,10 +60,8 @@ def load_csv(filename):
 
     return df
 
-
 def save_plot(filename):
     """Save the current plot to the plots folder."""
-
     path = os.path.join(PLOTS_FOLDER, filename)
     plt.tight_layout()
     plt.savefig(path, dpi=300)
@@ -93,12 +77,10 @@ def save_plot(filename):
 def plot_representative_trajectories():
     """
     Plot the reference path and overlay both controller trajectories.
-
     Representative tuning values:
         Stanley: k = 0.8
         Pure Pursuit: lookahead = 6 m
     """
-
     for route in ROUTES:
         stanley_file = f"stanley_{route}_k08.csv"
         pp_file = f"purepursuit_{route}_ld6.csv"
@@ -116,26 +98,15 @@ def plot_representative_trajectories():
         # The reference path is reconstructed from the logged closest
         # waypoint positions.
         plt.plot(
-            stanley["path_x"],
-            stanley["path_y"],
-            linestyle="--",
-            linewidth=2,
-            label="Reference Path"
+            stanley["path_x"], stanley["path_y"],
+            linestyle="--", linewidth=2, label="Reference Path"
         )
 
         # Stanley vehicle trajectory.
-        plt.plot(
-            stanley["x"],
-            stanley["y"],
-            label="Stanley k=0.8"
-        )
+        plt.plot(stanley["x"], stanley["y"], label="Stanley k=0.8")
 
         # Pure Pursuit vehicle trajectory.
-        plt.plot(
-            pp["x"],
-            pp["y"],
-            label="Pure Pursuit Ld=6m"
-        )
+        plt.plot(pp["x"], pp["y"], label="Pure Pursuit Ld=6m")
 
         plt.xlabel("X Position [m]")
         plt.ylabel("Y Position [m]")
@@ -146,7 +117,6 @@ def plot_representative_trajectories():
 
         save_plot(f"trajectory_reference_{route}.png")
 
-
 # ============================================================
 # PLOT 2: CROSS-TRACK ERROR COMPARISON
 # ============================================================
@@ -155,11 +125,9 @@ def plot_cross_track_error():
     """
     Compare cross-track error over time for representative tuning.
     """
-
     for route in ROUTES:
         stanley_file = f"stanley_{route}_k08.csv"
         pp_file = f"purepursuit_{route}_ld6.csv"
-
         stanley = load_csv(stanley_file)
         pp = load_csv(pp_file)
 
@@ -168,17 +136,9 @@ def plot_cross_track_error():
 
         plt.figure()
 
-        plt.plot(
-            stanley["time"],
-            stanley["cross_track_error"].abs(),
-            label="Stanley k=0.8"
-        )
+        plt.plot(stanley["time"], stanley["cross_track_error"].abs(), label="Stanley k=0.8")
 
-        plt.plot(
-            pp["time"],
-            pp["cross_track_error"].abs(),
-            label="Pure Pursuit Ld=6m"
-        )
+        plt.plot(pp["time"], pp["cross_track_error"].abs(), label="Pure Pursuit Ld=6m")
 
         plt.xlabel("Time [s]")
         plt.ylabel("Absolute Cross-Track Error [m]")
@@ -188,7 +148,6 @@ def plot_cross_track_error():
 
         save_plot(f"cross_track_error_{route}.png")
 
-
 # ============================================================
 # PLOT 3: HEADING ERROR COMPARISON
 # ============================================================
@@ -197,7 +156,6 @@ def plot_heading_error():
     """
     Compare heading error over time for representative tuning.
     """
-
     for route in ROUTES:
         stanley_file = f"stanley_{route}_k08.csv"
         pp_file = f"purepursuit_{route}_ld6.csv"
@@ -210,17 +168,9 @@ def plot_heading_error():
 
         plt.figure()
 
-        plt.plot(
-            stanley["time"],
-            stanley["heading_error_deg"].abs(),
-            label="Stanley k=0.8"
-        )
+        plt.plot(stanley["time"], stanley["heading_error_deg"].abs(), label="Stanley k=0.8")
 
-        plt.plot(
-            pp["time"],
-            pp["heading_error_deg"].abs(),
-            label="Pure Pursuit Ld=6m"
-        )
+        plt.plot(pp["time"], pp["heading_error_deg"].abs(), label="Pure Pursuit Ld=6m")
 
         plt.xlabel("Time [s]")
         plt.ylabel("Absolute Heading Error [deg]")
@@ -230,7 +180,6 @@ def plot_heading_error():
 
         save_plot(f"heading_error_{route}.png")
 
-
 # ============================================================
 # PLOT 4: STANLEY GAIN SWEEP
 # ============================================================
@@ -239,7 +188,6 @@ def plot_stanley_gain_sweep():
     """
     Plot mean and max cross-track error for Stanley gain values.
     """
-
     for route in ROUTES:
         gains = []
         mean_errors = []
@@ -274,7 +222,6 @@ def plot_stanley_gain_sweep():
 
         save_plot(f"stanley_gain_sweep_{route}.png")
 
-
 # ============================================================
 # PLOT 5: PURE PURSUIT LOOKAHEAD SWEEP
 # ============================================================
@@ -283,7 +230,6 @@ def plot_pure_pursuit_lookahead_sweep():
     """
     Plot mean and max cross-track error for Pure Pursuit lookahead values.
     """
-
     for route in ROUTES:
         lookaheads = []
         mean_errors = []
@@ -317,7 +263,6 @@ def plot_pure_pursuit_lookahead_sweep():
 
         save_plot(f"purepursuit_lookahead_sweep_{route}.png")
 
-
 # ============================================================
 # SUMMARY TABLE
 # ============================================================
@@ -325,7 +270,6 @@ def plot_pure_pursuit_lookahead_sweep():
 def create_summary_table():
     """
     Create a summary table from all valid CSV files.
-
     The table includes:
         - mean cross-track error
         - max cross-track error
@@ -334,9 +278,7 @@ def create_summary_table():
         - final distance to goal
         - simulation time
     """
-
     rows = []
-
     csv_files = glob.glob(os.path.join(RESULTS_FOLDER, "*.csv"))
 
     for file_path in csv_files:
@@ -372,7 +314,6 @@ def create_summary_table():
     summary.to_csv(summary_path, index=False)
 
     print(f"Saved summary table: {summary_path}")
-
 
 # ============================================================
 # MAIN

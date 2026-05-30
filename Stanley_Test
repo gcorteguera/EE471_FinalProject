@@ -2,7 +2,12 @@ import carla
 import math
 import csv
 
+# ==============================================================
+# Stanley Controller Implementation in CARLA
+# ==============================================================
 
+# Normalize angle to the range [-pi, pi]
+# This prevents large jumps in heading error calculations.
 def normalize_angle(angle):
     while angle > math.pi:
         angle -= 2.0 * math.pi
@@ -11,20 +16,32 @@ def normalize_angle(angle):
     return angle
 
 
+# Calculate vehicle speed from CARLA velocity components.
 def get_speed(vehicle):
     v = vehicle.get_velocity()
     return math.sqrt(v.x**2 + v.y**2 + v.z**2)
 
 
+# Compute 2D distance between two locations.
 def distance_2d(loc1, loc2):
     return math.sqrt((loc1.x - loc2.x)**2 + (loc1.y - loc2.y)**2)
 
 
+# Stanley Controller
+#
+# Uses:
+#   1. Heading error
+#   2. Cross-track error
+#
+# Gain k determines how aggressively the vehicle corrects
+# lateral tracking error.
 def stanley_control(vehicle, route, k=0.8):
+
     transform = vehicle.get_transform()
     loc = transform.location
     yaw = math.radians(transform.rotation.yaw)
 
+    # Find closest waypoint on the reference route.
     closest_idx = 0
     min_dist = float("inf")
 
@@ -39,31 +56,36 @@ def stanley_control(vehicle, route, k=0.8):
     closest_wp = route[closest_idx]
     wp_yaw = math.radians(closest_wp.transform.rotation.yaw)
 
+    # Difference between vehicle heading and path heading.
     heading_error = normalize_angle(wp_yaw - yaw)
 
     dx = loc.x - closest_wp.transform.location.x
     dy = loc.y - closest_wp.transform.location.y
 
+    # Compute signed cross-track error.
     perp_heading = wp_yaw + math.pi / 2.0
     cross_track_error = dx * math.cos(perp_heading) + dy * math.sin(perp_heading)
 
     speed = max(get_speed(vehicle), 0.1)
 
+    # Stanley steering law.
     steer_rad = heading_error - math.atan2(k * cross_track_error, speed)
 
+    # Convert steering angle into CARLA steering command.
     steer = steer_rad / math.radians(35)
     steer = max(-1.0, min(1.0, steer))
 
     return steer, cross_track_error, heading_error, closest_idx
 
 
+# Connect to CARLA simulator.
 client = carla.Client("localhost", 2000)
 client.set_timeout(10.0)
 
 world = client.get_world()
 original_settings = world.get_settings()
 
-# Smooth simulation mode
+# Enable synchronous mode for smoother and repeatable simulations.
 settings = world.get_settings()
 settings.synchronous_mode = True
 settings.fixed_delta_seconds = 0.05
@@ -71,6 +93,7 @@ world.apply_settings(settings)
 
 carla_map = world.get_map()
 
+# Spawn vehicle at first available spawn point.
 spawn = carla_map.get_spawn_points()[0]
 
 vehicle_bp = world.get_blueprint_library().find("vehicle.tesla.model3")
@@ -78,10 +101,10 @@ vehicle = world.spawn_actor(vehicle_bp, spawn)
 
 spectator = world.get_spectator()
 
+# Generate a reference route using CARLA road waypoints.
 waypoint = carla_map.get_waypoint(spawn.location)
 route = []
 
-# Longer path
 for i in range(350):
     route.append(waypoint)
 
@@ -92,53 +115,51 @@ for i in range(350):
 
     waypoint = next_waypoints[0]
 
+# Final waypoint is used as the goal location.
 goal_location = route[-1].transform.location
 
-# Draw red path
+# Draw reference path in red.
 for wp in route:
     world.debug.draw_point(
         wp.transform.location + carla.Location(z=0.5),
-        size=0.15,
-        color=carla.Color(255, 0, 0),
-        life_time=600.0
+        size=0.15, color=carla.Color(255, 0, 0), life_time=600.0
     )
 
-# Draw yellow goal point
+# Draw goal point in yellow.
 world.debug.draw_point(
     goal_location + carla.Location(z=1.0),
-    size=0.5,
-    color=carla.Color(255, 255, 0),
-    life_time=600.0
+    size=0.5, color=carla.Color(255, 255, 0), life_time=600.0
 )
 
 print("Starting Stanley controller...")
 print(f"Generated {len(route)} waypoints.")
 print("Yellow dot is the goal point.")
 
+# Store experiment data for later analysis.
 log = []
 
 try:
+    # Main simulation loop.
     for step in range(3000):
+
         world.tick()
 
+        # Compute steering command using Stanley controller.
         steer, cte, heading_error, closest_idx = stanley_control(
-            vehicle,
-            route,
-            k=0.8
-        )
+            vehicle, route, k=0.8)
 
+        # Apply steering and throttle commands.
         vehicle.apply_control(
             carla.VehicleControl(
-                throttle=0.25,
-                steer=steer,
-                brake=0.0
+                throttle=0.25, steer=steer, brake=0.0
             )
         )
 
         transform = vehicle.get_transform()
+
         distance_to_goal = distance_2d(transform.location, goal_location)
 
-        # Smooth top-down camera
+        # Top-down camera view for easier visualization.
         spectator.set_transform(
             carla.Transform(
                 transform.location + carla.Location(z=65),
@@ -150,23 +171,21 @@ try:
             )
         )
 
+        # Save data for plotting and performance analysis.
         log.append([
-            step,
-            transform.location.x,
-            transform.location.y,
-            steer,
-            cte,
-            math.degrees(heading_error),
-            closest_idx,
-            get_speed(vehicle),
-            distance_to_goal
+            step, transform.location.x, transform.location.y,
+            steer, cte, math.degrees(heading_error),
+            closest_idx, get_speed(vehicle), distance_to_goal
         ])
 
+        # Stop when the vehicle reaches the goal.
         if distance_to_goal < 3.0:
             print("Goal reached!")
             break
 
 finally:
+
+    # Safely stop the vehicle.
     vehicle.apply_control(
         carla.VehicleControl(
             throttle=0.0,
@@ -176,20 +195,16 @@ finally:
 
     vehicle.destroy()
 
+    # Restore original CARLA settings.
     world.apply_settings(original_settings)
 
+    # Save experiment data to CSV.
     with open("stanley_results.csv", "w", newline="") as f:
         writer = csv.writer(f)
 
         writer.writerow([
-            "step",
-            "x",
-            "y",
-            "steer",
-            "cross_track_error",
-            "heading_error_deg",
-            "closest_waypoint",
-            "speed",
+            "step", "x", "y", "steer", "cross_track_error",
+            "heading_error_deg", "closest_waypoint", "speed",
             "distance_to_goal"
         ])
 
