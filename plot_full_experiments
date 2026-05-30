@@ -23,6 +23,8 @@ REQUIRED_COLUMNS = [
     "time",
     "x",
     "y",
+    "path_x",
+    "path_y",
     "cross_track_error",
     "heading_error_deg",
     "distance_to_goal"
@@ -34,10 +36,16 @@ REQUIRED_COLUMNS = [
 # ============================================================
 
 def make_plots_folder():
+    """Create plots folder if it does not already exist."""
     os.makedirs(PLOTS_FOLDER, exist_ok=True)
 
 
 def is_valid_dataframe(df):
+    """
+    Check whether a CSV file contains the columns required
+    for the newest plotting script.
+    """
+
     for col in REQUIRED_COLUMNS:
         if col not in df.columns:
             return False
@@ -46,6 +54,12 @@ def is_valid_dataframe(df):
 
 
 def load_csv(filename):
+    """
+    Load one CSV file from the results folder.
+
+    If the file is missing or from an older script version, skip it.
+    """
+
     path = os.path.join(RESULTS_FOLDER, filename)
 
     if not os.path.exists(path):
@@ -62,27 +76,27 @@ def load_csv(filename):
 
 
 def save_plot(filename):
+    """Save the current plot to the plots folder."""
+
     path = os.path.join(PLOTS_FOLDER, filename)
     plt.tight_layout()
     plt.savefig(path, dpi=300)
     plt.close()
+
     print(f"Saved plot: {path}")
 
 
-def tuning_label(controller, value):
-    if controller == "stanley":
-        return f"k={value}"
-
-    return f"Ld={value}m"
-
-
 # ============================================================
-# PLOT 1: REPRESENTATIVE TRAJECTORIES
+# PLOT 1: TRAJECTORY VS REFERENCE PATH
 # ============================================================
 
 def plot_representative_trajectories():
     """
-    Compare Stanley k=0.8 and Pure Pursuit Ld=6m for each route.
+    Plot the reference path and overlay both controller trajectories.
+
+    Representative tuning values:
+        Stanley: k = 0.8
+        Pure Pursuit: lookahead = 6 m
     """
 
     for route in ROUTES:
@@ -97,21 +111,44 @@ def plot_representative_trajectories():
 
         plt.figure()
 
-        plt.plot(stanley["x"], stanley["y"], label="Stanley k=0.8")
-        plt.plot(pp["x"], pp["y"], label="Pure Pursuit Ld=6m")
+        # Reference path.
+        #
+        # The reference path is reconstructed from the logged closest
+        # waypoint positions.
+        plt.plot(
+            stanley["path_x"],
+            stanley["path_y"],
+            linestyle="--",
+            linewidth=2,
+            label="Reference Path"
+        )
+
+        # Stanley vehicle trajectory.
+        plt.plot(
+            stanley["x"],
+            stanley["y"],
+            label="Stanley k=0.8"
+        )
+
+        # Pure Pursuit vehicle trajectory.
+        plt.plot(
+            pp["x"],
+            pp["y"],
+            label="Pure Pursuit Ld=6m"
+        )
 
         plt.xlabel("X Position [m]")
         plt.ylabel("Y Position [m]")
-        plt.title(f"Trajectory Comparison - {route}")
+        plt.title(f"Trajectory vs Reference Path - {route}")
         plt.axis("equal")
         plt.grid(True)
         plt.legend()
 
-        save_plot(f"trajectory_{route}.png")
+        save_plot(f"trajectory_reference_{route}.png")
 
 
 # ============================================================
-# PLOT 2: CROSS-TRACK ERROR
+# PLOT 2: CROSS-TRACK ERROR COMPARISON
 # ============================================================
 
 def plot_cross_track_error():
@@ -153,7 +190,7 @@ def plot_cross_track_error():
 
 
 # ============================================================
-# PLOT 3: HEADING ERROR
+# PLOT 3: HEADING ERROR COMPARISON
 # ============================================================
 
 def plot_heading_error():
@@ -244,7 +281,7 @@ def plot_stanley_gain_sweep():
 
 def plot_pure_pursuit_lookahead_sweep():
     """
-    Plot mean and max cross-track error for Pure Pursuit lookahead.
+    Plot mean and max cross-track error for Pure Pursuit lookahead values.
     """
 
     for route in ROUTES:
@@ -287,7 +324,15 @@ def plot_pure_pursuit_lookahead_sweep():
 
 def create_summary_table():
     """
-    Create summary_metrics.csv using only valid new-format CSV files.
+    Create a summary table from all valid CSV files.
+
+    The table includes:
+        - mean cross-track error
+        - max cross-track error
+        - mean heading error
+        - max heading error
+        - final distance to goal
+        - simulation time
     """
 
     rows = []

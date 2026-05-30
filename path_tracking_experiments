@@ -611,6 +611,8 @@ def run_single_experiment(
                 )
             )
 
+            closest_path_point = path[closest_idx].location
+
             log.append([
                 step,
                 step * FIXED_DELTA_SECONDS,
@@ -620,6 +622,8 @@ def run_single_experiment(
                 tuning_value,
                 transform.location.x,
                 transform.location.y,
+                closest_path_point.x,
+                closest_path_point.y,
                 transform.rotation.yaw,
                 steer,
                 throttle,
@@ -640,24 +644,12 @@ def run_single_experiment(
             writer = csv.writer(f)
 
             writer.writerow([
-                "step",
-                "time",
-                "route_name",
-                "spawn_index",
-                "controller_type",
-                "tuning_value",
-                "x",
-                "y",
-                "yaw_deg",
-                "steer",
-                "throttle",
-                "brake",
-                "cross_track_error",
-                "heading_error_deg",
-                "closest_waypoint",
-                "target_waypoint",
-                "speed",
-                "distance_to_goal"
+                "step", "time", "route_name", "spawn_index",
+                "controller_type", "tuning_value", "x", "y",
+                "path_x", "path_y", "yaw_deg", "steer",
+                "throttle", "brake", "cross_track_error",
+                "heading_error_deg", "closest_waypoint", "target_waypoint",
+                "speed", "distance_to_goal"
             ])
 
             writer.writerows(log)
