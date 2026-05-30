@@ -145,29 +145,21 @@ try:
         world.tick()
 
         # Compute steering command using Stanley controller.
-        steer, cte, heading_error, closest_idx = stanley_control(
-            vehicle, route, k=0.8)
+        steer, cte, heading_error, closest_idx = stanley_control(vehicle, route, k=0.8)
 
         # Apply steering and throttle commands.
         vehicle.apply_control(
-            carla.VehicleControl(
-                throttle=0.25, steer=steer, brake=0.0
-            )
+            carla.VehicleControl(throttle=0.25, steer=steer, brake=0.0)
         )
 
         transform = vehicle.get_transform()
-
         distance_to_goal = distance_2d(transform.location, goal_location)
 
         # Top-down camera view for easier visualization.
         spectator.set_transform(
             carla.Transform(
                 transform.location + carla.Location(z=65),
-                carla.Rotation(
-                    pitch=-90,
-                    yaw=0,
-                    roll=0
-                )
+                carla.Rotation(pitch=-90, yaw=0, roll=0)
             )
         )
 
